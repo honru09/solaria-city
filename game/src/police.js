@@ -267,7 +267,7 @@ export class PoliceManager {
       const stopDist = player.inVehicle ? 8 : 6;
       let desiredSpeed = maxChaseSpeed;
       if (dist <= 40) {
-        desiredSpeed = Math.max(0, Math.min(maxChaseSpeed, (dist - stopDist) * 1.2));
+        desiredSpeed = Math.max(0, Math.min(maxChaseSpeed, (dist - stopDist) * 0.9));
       }
 
       // Separation: brake when another cruiser is close ahead
@@ -285,7 +285,7 @@ export class PoliceManager {
       }
 
       // Accelerate / brake velocity toward the desired speed
-      const rate = desiredSpeed < car.velocity ? 14 : 8;
+      const rate = desiredSpeed < car.velocity ? 20 : 8;
       if (car.velocity < desiredSpeed) {
         car.velocity = Math.min(desiredSpeed, car.velocity + rate * delta);
       } else {
