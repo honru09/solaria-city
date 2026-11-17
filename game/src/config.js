@@ -2,7 +2,7 @@
 
 export const CONFIG = {
   TITLE: 'SOLARIA CITY: SUNSTATE UNDERWORLD',
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
 
   // City & World Dimensions
   CITY: {
