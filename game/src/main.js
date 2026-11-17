@@ -153,16 +153,10 @@ export class Game {
         }
       }
 
-      // Switch Weapon (Q or 1 / 2)
+      // Switch Weapon (Q cycles, 1 = fists, 2 = pistol)
       if (code === 'KeyQ') this.player.switchWeapon();
-      if (code === 'Digit1') {
-        this.player.currentWeaponIndex = 0;
-        this.player.switchWeapon();
-      }
-      if (code === 'Digit2') {
-        this.player.currentWeaponIndex = 1;
-        this.player.switchWeapon();
-      }
+      if (code === 'Digit1') this.player.selectWeapon(0);
+      if (code === 'Digit2') this.player.selectWeapon(1);
 
       // Mute audio (M)
       if (code === 'KeyM') this.audio.toggleMute();
@@ -193,7 +187,10 @@ export class Game {
       if (this.state !== 'PLAYING') return;
 
       if (e.button === 0) { // Left Click: Attack / Shoot
-        this.input.attack = true;
+        // Ignore the click that engages pointer lock (it would instantly fire)
+        if (document.pointerLockElement) {
+          this.input.attack = true;
+        }
       } else if (e.button === 2) { // Right Click: Aim
         this.input.aim = true;
       }
@@ -283,6 +280,17 @@ export class Game {
     }
   }
 
+  syncHudVisibility() {
+    // HUD is hidden on the start screen, visible while playing/paused.
+    // DOM write only happens when the state actually changes.
+    if (this._hudVisibleState === this.state) return;
+    this._hudVisibleState = this.state;
+    const hudEl = document.getElementById('hud');
+    if (hudEl) {
+      hudEl.style.display = this.state === 'START_SCREEN' ? 'none' : '';
+    }
+  }
+
   loop(now) {
     requestAnimationFrame(this.loop);
 
@@ -326,6 +334,7 @@ export class Game {
     }
 
     // 2. Update HUD
+    this.syncHudVisibility();
     if (this.hud) {
       this.hud.update(
         this.player,

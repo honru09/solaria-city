@@ -304,10 +304,18 @@ export class VehicleManager {
   }
 
   spawnInitialParkedCars() {
-    const keys = Object.keys(CONFIG.VEHICLES);
+    // No parked police cars: cruisers only ever come from the wanted system
+    const keys = Object.keys(CONFIG.VEHICLES).filter((k) => k !== 'cruiser');
     // Spawn 10 parked vehicles along curbs
     for (let i = 0; i < 10; i++) {
-      const roadPos = this.city.getRandomRoadPosition();
+      // Resample so nothing parks within 25m of the player start (10, -10)
+      let roadPos = this.city.getRandomRoadPosition();
+      for (let t = 0; t < 8; t++) {
+        const dx = roadPos.x + 2.5 - 10;
+        const dz = roadPos.z + 10;
+        if (dx * dx + dz * dz >= 25 * 25) break;
+        roadPos = this.city.getRandomRoadPosition();
+      }
       const carKey = keys[i % keys.length];
       const cfg = CONFIG.VEHICLES[carKey];
       // Offset to curb

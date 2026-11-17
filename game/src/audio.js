@@ -10,6 +10,7 @@ export class AudioManager {
 
     // Engine synth state
     this.engineOsc = null;
+    this.engineOscGain = null;
     this.engineGain = null;
     this.engineSub = null;
     this.isEngineRunning = false;
@@ -17,6 +18,7 @@ export class AudioManager {
     // Siren state
     this.sirenOsc = null;
     this.sirenGain = null;
+    this.sirenLfo = null;
     this.isSirenRunning = false;
 
     // Music loop state
@@ -35,14 +37,20 @@ export class AudioManager {
 
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(0.65, this.ctx.currentTime);
-      this.masterGain.connect(this.ctx.destination);
+
+      // Compressor tames peaks from stacked synths (buzz/clipping control)
+      const compressor = this.ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-18, this.ctx.currentTime);
+      compressor.ratio.setValueAtTime(6, this.ctx.currentTime);
+      this.masterGain.connect(compressor);
+      compressor.connect(this.ctx.destination);
 
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.setValueAtTime(0.85, this.ctx.currentTime);
       this.sfxGain.connect(this.masterGain);
 
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.setValueAtTime(0.40, this.ctx.currentTime);
+      this.musicGain.gain.setValueAtTime(0.16, this.ctx.currentTime);
       this.musicGain.connect(this.masterGain);
 
       this.startMusic();
@@ -86,11 +94,15 @@ export class AudioManager {
 
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(380, now);
+      filter.frequency.setValueAtTime(320, now);
 
-      this.engineGain.gain.setValueAtTime(0.12, now);
+      this.engineGain.gain.setValueAtTime(0.05, now);
 
-      this.engineOsc.connect(filter);
+      // Saw runs at a low 0.35 mix so the triangle sub carries the engine tone
+      this.engineOscGain = this.ctx.createGain();
+      this.engineOscGain.gain.setValueAtTime(0.35, now);
+      this.engineOsc.connect(this.engineOscGain);
+      this.engineOscGain.connect(filter);
       this.engineSub.connect(filter);
       filter.connect(this.engineGain);
       this.engineGain.connect(this.sfxGain);
@@ -110,7 +122,7 @@ export class AudioManager {
       const targetFreq = 50 + speedRatio * 160 + (accel ? 40 : 0);
       this.engineOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
       this.engineSub.frequency.setTargetAtTime(targetFreq * 0.5, now, 0.08);
-      const targetVol = 0.08 + speedRatio * 0.16 + (accel ? 0.06 : 0);
+      const targetVol = 0.035 + speedRatio * 0.075 + (accel ? 0.025 : 0);
       this.engineGain.gain.setTargetAtTime(targetVol, now, 0.08);
     } catch {
       // ignore
@@ -126,6 +138,7 @@ export class AudioManager {
       // ignore
     }
     this.engineOsc = null;
+    this.engineOscGain = null;
     this.engineSub = null;
     this.engineGain = null;
     this.isEngineRunning = false;
@@ -136,21 +149,23 @@ export class AudioManager {
     try {
       this.sirenOsc = this.ctx.createOscillator();
       this.sirenGain = this.ctx.createGain();
-      const lfo = this.ctx.createOscillator();
+      this.sirenLfo = this.ctx.createOscillator();
       const lfoGain = this.ctx.createGain();
 
-      this.sirenOsc.type = 'sawtooth';
+      this.sirenOsc.type = 'sine';
       this.sirenOsc.frequency.setValueAtTime(800, this.ctx.currentTime);
 
       // Police 2-tone wail (650Hz to 1100Hz at ~1.6Hz oscillation)
-      lfo.type = 'triangle';
-      lfo.frequency.setValueAtTime(1.6, this.ctx.currentTime);
+      this.sirenLfo.type = 'triangle';
+      this.sirenLfo.frequency.setValueAtTime(1.6, this.ctx.currentTime);
       lfoGain.gain.setValueAtTime(260, this.ctx.currentTime);
 
-      lfo.connect(this.sirenOsc.frequency);
-      lfo.start();
+      this.sirenLfo.connect(lfoGain);
+      lfoGain.connect(this.sirenOsc.frequency);
+      this.sirenLfo.start();
 
-      this.sirenGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      // Starts silent; PoliceManager drives the volume by distance via setSirenVolume
+      this.sirenGain.gain.setValueAtTime(0, this.ctx.currentTime);
       this.sirenOsc.connect(this.sirenGain);
       this.sirenGain.connect(this.sfxGain);
 
@@ -161,15 +176,23 @@ export class AudioManager {
     }
   }
 
+  setSirenVolume(v) {
+    if (!this.ctx || !this.isSirenRunning || !this.sirenGain) return;
+    const clamped = Math.max(0, Math.min(0.12, v));
+    this.sirenGain.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.1);
+  }
+
   stopSiren() {
     if (!this.isSirenRunning) return;
     try {
       if (this.sirenOsc) this.sirenOsc.stop();
+      if (this.sirenLfo) this.sirenLfo.stop();
     } catch {
       // ignore
     }
     this.sirenOsc = null;
     this.sirenGain = null;
+    this.sirenLfo = null;
     this.isSirenRunning = false;
   }
 
@@ -503,14 +526,14 @@ export class AudioManager {
       const filter = this.ctx.createBiquadFilter();
       const gain = this.ctx.createGain();
 
-      osc.type = 'sawtooth';
+      osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, time);
 
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(450, time);
       filter.frequency.exponentialRampToValueAtTime(180, time + dur);
 
-      gain.gain.setValueAtTime(0.24, time);
+      gain.gain.setValueAtTime(0.12, time);
       gain.gain.exponentialRampToValueAtTime(0.01, time + dur);
 
       osc.connect(filter);
@@ -538,7 +561,7 @@ export class AudioManager {
         const gain = this.ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(f * 2, time);
-        gain.gain.setValueAtTime(0.06, time);
+        gain.gain.setValueAtTime(0.04, time);
         gain.gain.exponentialRampToValueAtTime(0.005, time + 1.6);
         osc.connect(gain);
         gain.connect(this.musicGain);

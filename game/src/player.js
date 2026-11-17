@@ -26,7 +26,7 @@ export class Player {
 
     // Weapon Inventory
     this.weapons = ['fists', 'pistol'];
-    this.currentWeaponIndex = 1; // Start with pistol for fun
+    this.currentWeaponIndex = 0; // Start with fists (no accidental first-shot)
     this.ammo = { pistol: 48 };
     this.isAiming = false;
     this.shootCooldown = 0;
@@ -91,9 +91,10 @@ export class Player {
 
     this.group.add(this.leftArm, this.rightArm);
 
-    // Weapon mesh held in right hand
+    // Weapon mesh held in right hand (hidden while fists are equipped)
     this.pistolMesh = this.buildPistolModel();
     this.pistolMesh.position.set(0, -0.4, 0.25);
+    this.pistolMesh.visible = false;
     this.rightArm.add(this.pistolMesh);
 
     // Legs
@@ -141,7 +142,12 @@ export class Player {
   }
 
   switchWeapon() {
-    this.currentWeaponIndex = (this.currentWeaponIndex + 1) % this.weapons.length;
+    this.selectWeapon((this.currentWeaponIndex + 1) % this.weapons.length);
+  }
+
+  selectWeapon(index) {
+    if (index < 0 || index >= this.weapons.length) return;
+    this.currentWeaponIndex = index;
     const cur = this.getCurrentWeapon();
     this.pistolMesh.visible = cur.id === 'pistol';
     if (this.audio) this.audio.playDoor();
@@ -206,6 +212,7 @@ export class Player {
     this.isWasted = false;
     this.position = { x: 10, y: 0.35, z: -10 };
     this.velocity = { x: 0, y: 0, z: 0 };
+    this._camInit = false; // Snap the follow camera on the next frame
     if (this.inVehicle) this.exitVehicle();
     this.group.visible = true;
   }
@@ -257,9 +264,9 @@ export class Player {
       const nx = moveX / len;
       const nz = moveZ / len;
 
-      // Rotate by camera yaw
-      const worldMoveX = nx * Math.cos(this.camYaw) + nz * Math.sin(this.camYaw);
-      const worldMoveZ = -nx * Math.sin(this.camYaw) + nz * Math.cos(this.camYaw);
+      // Rotate by camera yaw (camera forward = (sinYaw, cosYaw), screen-right = (-cosYaw, sinYaw))
+      const worldMoveX = -nx * Math.cos(this.camYaw) + nz * Math.sin(this.camYaw);
+      const worldMoveZ = nx * Math.sin(this.camYaw) + nz * Math.cos(this.camYaw);
 
       this.velocity.x = worldMoveX * currentSpeed;
       this.velocity.z = worldMoveZ * currentSpeed;
@@ -411,13 +418,22 @@ export class Player {
   }
 
   updateOnFootCamera(delta) {
-    // Smooth third person follow camera
+    // Smooth third person follow camera (exponential lerp toward the orbit target)
     const targetDist = this.isAiming ? 3.2 : this.camDist;
     const camX = this.position.x - Math.sin(this.camYaw) * targetDist * Math.cos(this.camPitch);
     const camZ = this.position.z - Math.cos(this.camYaw) * targetDist * Math.cos(this.camPitch);
     const camY = this.position.y + 1.8 + Math.sin(this.camPitch) * targetDist;
 
-    this.camera.position.set(camX, camY, camZ);
+    if (!this._camInit) {
+      // First frame after spawn/respawn: snap, don't swoop in from the origin
+      this.camera.position.set(camX, camY, camZ);
+      this._camInit = true;
+    } else {
+      const k = 1 - Math.exp(-10 * delta);
+      this.camera.position.x += (camX - this.camera.position.x) * k;
+      this.camera.position.y += (camY - this.camera.position.y) * k;
+      this.camera.position.z += (camZ - this.camera.position.z) * k;
+    }
     this.camera.lookAt(this.position.x, this.position.y + 1.5, this.position.z);
   }
 

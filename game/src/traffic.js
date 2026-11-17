@@ -152,11 +152,19 @@ export class TrafficManager {
   initTrafficCars(count) {
     const carTypes = ['venom', 'titan', 'viper', 'taxi'];
     for (let i = 0; i < count; i++) {
-      const roadPos = this.city.getRandomRoadPosition();
+      // Resample so no traffic car spawns within 30m of the player start (10, -10)
+      let roadPos = this.city.getRandomRoadPosition();
+      for (let t = 0; t < 10; t++) {
+        const dx = roadPos.x - 10;
+        const dz = roadPos.z + 10;
+        if (dx * dx + dz * dz >= 30 * 30) break;
+        roadPos = this.city.getRandomRoadPosition();
+      }
       const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
       const cfg = CONFIG.VEHICLES[carType];
       const car = new Vehicle(this.scene, cfg, roadPos.x, roadPos.z, roadPos.dir);
       car.velocity = 12 + Math.random() * 8; // Ambient cruising speed
+      car.cruiseSpeed = car.velocity; // Braking recovery target
       car.isOccupied = true; // Ambient NPC driver
       this.trafficCars.push(car);
       this.vehicleManager.vehicles.push(car);
@@ -266,6 +274,30 @@ export class TrafficManager {
       // Simple AI Lane Following
       const forwardX = Math.sin(car.heading);
       const forwardZ = Math.cos(car.heading);
+
+      // Simple braking: stop for the player or another traffic car close ahead,
+      // then ease back up to cruise speed once the way is clear
+      const isAhead = (tx, tz) => {
+        const ox = tx - car.position.x;
+        const oz = tz - car.position.z;
+        const od = Math.sqrt(ox * ox + oz * oz);
+        return od < 7 && od > 0.001 && (ox * forwardX + oz * forwardZ) / od > 0.8;
+      };
+      let blocked = player ? isAhead(player.position.x, player.position.z) : false;
+      if (!blocked) {
+        for (const other of this.trafficCars) {
+          if (other === car) continue;
+          if (isAhead(other.position.x, other.position.z)) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (blocked) {
+        car.velocity = Math.max(0, car.velocity - 30 * delta);
+      } else if (car.cruiseSpeed !== undefined && car.velocity < car.cruiseSpeed) {
+        car.velocity = Math.min(car.cruiseSpeed, car.velocity + 10 * delta);
+      }
 
       const nextX = car.position.x + forwardX * car.velocity * delta;
       const nextZ = car.position.z + forwardZ * car.velocity * delta;
